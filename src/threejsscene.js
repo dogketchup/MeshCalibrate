@@ -23,7 +23,7 @@ const spotLights = [];
 for ( let i = 0; i < 3; i ++ ) {
 	const light = new THREE.SpotLight( 0xffffff );
 	light.angle = Math.PI / 5;
-	light.intensity = 100;
+	light.intensity = 1000;
 	light.target.position.set( 0, 0, 0 );
 	light.userData.angle = i * ( Math.PI * 2 / 3 ); // 0°, 120°, 240°
 	scene.add( light );

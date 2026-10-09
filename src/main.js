@@ -55,7 +55,7 @@ document.querySelector('#app').innerHTML = `
       margin-top: 10px;
     }
   </style>
-    <canvas id="plane_1_texture"></canvas>
+  <canvas id="plane_1_texture" width="400" height="400"></canvas>
 
 </div>
 
