@@ -5,6 +5,7 @@ import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { exportTo3MF } from 'three-3mf-exporter'
 import { sampleTextureToVertexColors } from './export3mf.js'
 import { PLYExporter } from 'three/addons/exporters/PLYExporter.js';
+import {tagArray} from './aruCoSchema.js'
 
 
 const scene = new THREE.Scene();
@@ -133,7 +134,7 @@ const exportBtn = document.getElementById('export_mesh');
 function onChangeBuildX( event )
 {
   const mm = Number( event.target.value );
-  cube.scale.x = 1 + mm / 100; // 0 mm still shows the base cube
+  cube.scale.x = 1 + mm; // 0 mm still shows the base cube
   setTargetDistance();
 }
 
@@ -195,8 +196,8 @@ async function exportAll(event)
 
 function exportGLB() {
   var cubeTemp = cube.clone();
-cubeTemp.updateMatrixWorld(true);
-  cubeTemp.scale.setScalar(10);
+  cubeTemp.updateMatrixWorld(true);
+  cubeTemp.scale.setScalar(100);
   // Bake vertex colors first
   sampleTextureToVertexColors(cubeTemp, plane1);
 

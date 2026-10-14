@@ -41,7 +41,7 @@ document.querySelector('#app').innerHTML = `
   </div>
 </div>
 
-  <label for="generate_tag_code">ArUco marker id</label>
+  <label for="generate_tag_code">ArUco marker id base</label>
   <input type="range" value="40" min="0" max="100" class="slider" id="generate_tag_code"</input>
   <label for="tag_count">ArUco tags per plate</label>
   <input type="range" value="4" min="1" max="10" class="slider" id="tag_count"></input>
@@ -72,8 +72,11 @@ document.querySelector('#app').innerHTML = `
 
 // threejsscene.js reads #build_plate_x from the DOM, so it must be imported
 // only after the markup above has been inserted.
+//
+await import ('./aruCoSchema.js')
 await import ('./threejsscene.js')
 await import ('./arCuoTag.js')
 await import ('./export3mf.js')
+
 
 

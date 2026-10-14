@@ -1,5 +1,6 @@
 import { arucoToSVGString } from 'aruco-marker';
 import { optimizePhysics } from './physicsLayout.js'; // Adjust path if needed
+import ArUcoTag, { tagArray } from "./aruCoSchema.js"
 
 const range = document.getElementById('generate_tag_code');
 const sliderX = document.getElementById('build_plate_x');
@@ -20,7 +21,9 @@ function syncCountTags() {
 const PPM = 40; // canvas pixels per 1cm of build plate
 
 let markerId = Number(range.value);
-const markerImg = new Image(); // offscreen raster of current marker SVG
+const markerRasters = []; // one offscreen Image per tag (markerId + index)
+let rasterLoadsTotal = 0;
+let rasterLoadsPending = 0;
 
 // Keep hidden texture canvas out of document layout
 canvas.style.display = 'none';
@@ -37,11 +40,33 @@ function markerPixelSize() {
   return Math.max(16, Math.round((minDimension * 0.7) / Math.sqrt(countTags)));
 }
 
-// --- Marker raster: (re)load SVG at target drawing pixel size -------------
-function loadMarker(id, px) {
-  markerImg.onload = null; // reset handler to prevent duplicate triggers
-  markerImg.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(arucoToSVGString(id, px));
+// --- Marker rasters: (re)load one SVG per tag at target pixel size -------
+function loadAllMarkers(gen) {
+  const px = markerPixelSize();
+  markerRasters.length = 0;
+  rasterLoadsTotal = countTags;
+  rasterLoadsPending = countTags;
+
+  for (let i = 0; i < countTags; i++) {
+    const im = new Image();
+    markerRasters[i] = im;
+    im.onload = () => {
+      if (gen !== refreshGen) return; // superseded by a newer slider tick
+      rasterLoadsPending--;
+      if (rasterLoadsPending === 0) onAllMarkersLoaded();
+    };
+    im.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(arucoToSVGString(markerId + i, px));
+  }
+
+  if (rasterLoadsTotal === 0) onAllMarkersLoaded(); // defensive: N >= 1 in practice
 }
+
+function onAllMarkersLoaded() {
+  img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(arucoToSVGString(markerId, 250)); // preview shows base id
+  draw();
+  changed();
+}
+
 
 // --- Canvas Draw Function --------------------------------------------------
 function draw() {
@@ -52,17 +77,18 @@ function draw() {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // 2. Validate tag count & loaded marker image
+  // 2. Validate tag count (all per-tag rasters must be decoded before we get here)
   const N = countTags;
   if (!Number.isInteger(N) || N <= 0) return;
-  if (!markerImg || markerImg.naturalWidth === 0) return;
 
   // 3. Compute tag pixel size and optimal physics layout
   const size = markerPixelSize();
   const points = optimizePhysics(N, canvas.width, size);
 
-  // 4. Draw markers at computed center points
+  // 4. Draw each marker (id = markerId + i) and mirror it into tagArray for export
   for (let i = 0; i < points.length; i++) {
+    const raster = markerRasters[i];
+    if (!raster || raster.naturalWidth === 0) continue;
     const p = points[i];
 
     // Convert center coordinates (p.x, p.y) to top-left canvas origins
@@ -70,11 +96,25 @@ function draw() {
     const drawY = p.y - size / 2;
 
     ctx.drawImage(
-      markerImg,
-      0, 0, markerImg.naturalWidth, markerImg.naturalHeight,
+      raster,
+      0, 0, raster.naturalWidth, raster.naturalHeight,
       drawX, drawY, size, size
     );
+
+    let tag = tagArray[i];
+    if (!tag) {
+      tag = new ArUcoTag(markerId + i);
+      tagArray.push(tag);
+    }
+    tag.id = markerId + i; // each tag id increases by one
+    tag.centroidX = p.x;
+    tag.centroidY = p.y;
+    tag.widthX = size;
+    tag.heightY = size;
   }
+
+  // Shrink tagArray if the tag-count slider was lowered since the last draw
+  while (tagArray.length > N) tagArray.pop();
 }
 
 // --- Notify Three.js scene to re-upload canvas texture -------------------
@@ -90,15 +130,8 @@ function refresh() {
   syncCountTags();
   const gen = ++refreshGen;
 
-  sizeCanvas(); // Resizing canvas clears previous drawing
-  loadMarker(markerId, markerPixelSize());
-
-  markerImg.onload = () => {
-    if (gen !== refreshGen) return; // Superseded by a newer slider tick
-    img.src = markerImg.src;
-    draw();
-    changed();
-  };
+  sizeCanvas(); // Resizing canvas clears previous drawing; must precede markerPixelSize()
+  loadAllMarkers(gen); // draw() fires only when all per-tag SVGs are decoded
 }
 
 // Coalesce rapid slider input ticks into single animation frames
