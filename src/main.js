@@ -61,6 +61,8 @@ document.querySelector('#app').innerHTML = `
 
     <div class="controls">
       <button id="export_mesh">Export mesh + texture (3MF)</button>
+      <button id="export_tags">Export tag list (JSON)</button>
+      <button id="export_tags_csv">Export tag list (CSV)</button>
     </div>
 
 </div>

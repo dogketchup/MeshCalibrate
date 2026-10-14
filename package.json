@@ -13,6 +13,10 @@
   },
   "dependencies": {
     "aruco-marker": "^3.0.1",
-    "three": "^0.186.1"
+    "three": "^0.186.1",
+    "three-3mf-exporter": "^45.2.0"
+  },
+    "scripts": {
+  "dev": "vite --host 0.0.0.0 --port 5713"
   }
 }

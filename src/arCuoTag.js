@@ -1,6 +1,6 @@
 import { arucoToSVGString } from 'aruco-marker';
 import { optimizePhysics } from './physicsLayout.js'; // Adjust path if needed
-import ArUcoTag, { tagArray } from "./aruCoSchema.js"
+import ArUcoTag, { tagArray, pxToMm } from "./aruCoSchema.js"
 
 const range = document.getElementById('generate_tag_code');
 const sliderX = document.getElementById('build_plate_x');
@@ -107,10 +107,11 @@ function draw() {
       tagArray.push(tag);
     }
     tag.id = markerId + i; // each tag id increases by one
-    tag.centroidX = p.x;
-    tag.centroidY = p.y;
-    tag.widthX = size;
-    tag.heightY = size;
+    // px -> mm so schema fields stay in canonical mm (see pxToMm)
+    tag.centroidX = pxToMm(p.x);
+    tag.centroidY = pxToMm(p.y);
+    tag.widthX = pxToMm(size);
+    tag.heightY = pxToMm(size);
   }
 
   // Shrink tagArray if the tag-count slider was lowered since the last draw

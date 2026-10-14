@@ -197,14 +197,14 @@ async function exportAll(event)
 function exportGLB() {
   var cubeTemp = cube.clone();
   cubeTemp.updateMatrixWorld(true);
-  cubeTemp.scale.setScalar(100);
+  cubeTemp.scale.setScalar(10);
   // Bake vertex colors first
   sampleTextureToVertexColors(cubeTemp, plane1);
 
   const exporter = new GLTFExporter();
 
   exporter.parse(
-    cube,
+    cubeTemp,
     function (gltf) {
       const blob = new Blob([gltf], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);

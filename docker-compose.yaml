@@ -1,0 +1,23 @@
+services:
+  vite-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: meshcalibrate-container:latest
+    ports:
+      - "5713:5713"
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+    volumes:
+      - .:/app
+      - /app/node_modules
+    stdin_open: true # Keeps STDIN open to prevent Vite from receiving EOF
+    tty: true        # Allocates pseudo-TTY
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    command: tunnel --no-autoupdate run
+    depends_on:
+      - vite-app
