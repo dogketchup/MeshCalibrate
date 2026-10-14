@@ -67,6 +67,13 @@ const geometry = new THREE.BoxGeometry(
   SUBDIVISIONS
 );
 const material = [ faceMaterial, faceMaterial, markerMaterial, faceMaterial, faceMaterial, faceMaterial ];
+// The box is built centered on the origin, but the ArUco canvas painted on
+// its top face has its origin at the top-left corner (see arCuoTag.js).
+// Shift the geometry so canvas (0,0) lands on the world origin: canvas +x
+// -> +x, canvas +y (down) -> +z, and the top face sits at y = 0 (body
+// hangs below). Baked into the geometry (not mesh.position) so it
+// survives the scale the plate sliders apply to the mesh about the origin.
+geometry.translate( sliderXValue / 2, -0.5, sliderYValue / 2 );
 const cube = new THREE.Mesh( geometry, material );
 scene.add( cube );
 
@@ -98,7 +105,7 @@ scene.add( axesHelper );
 // Camera auto-backoff: the orbit target is the cube, so we keep the camera
 // direction fixed and only ease its distance away from the cube as it grows.
 const cameraOffset = new THREE.Vector3();
-let targetDistance = 10;
+let targetDistance = 20;
 const LERP_FACTOR = 0.1; // higher = snappier, lower = floatier
 
 function setTargetDistance()
@@ -241,4 +248,12 @@ function animate( time ) {
   renderer.render( scene, camera );
 
 }
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+window.addEventListener('resize', onWindowResize);
 

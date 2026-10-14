@@ -56,8 +56,7 @@ function exportTags() {
       id: t.id,
       centroidX: t.centroidX,
       centroidY: t.centroidY,
-      widthX: t.widthX,
-      heightY: t.heightY,
+      size: t.heightY,
     })),
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -72,34 +71,6 @@ function exportTags() {
 }
 
 document.getElementById("export_tags").addEventListener("click", exportTags);
-
-// CSV variant for spreadsheet tools. Plate dimensions are read from the
-// cm sliders and converted to mm (×10) so every number in the file is mm.
-function exportTagsCsv() {
-  const plateXmm = Number(document.getElementById("build_plate_x").value) * 10;
-  const plateYmm = Number(document.getElementById("build_plate_y").value) * 10;
-  const lines = [
-    `# plate, ${plateXmm} x ${plateYmm} mm (all values in mm)`,
-    "id,centroidX,centroidY,widthX,heightY",
-    ...tagArray.map(
-      (t) =>
-        `${t.id},${t.centroidX},${t.centroidY},${t.widthX},${t.heightY}`
-    ),
-  ];
-  const blob = new Blob([lines.join("\n") + "\n"], {
-    type: "text/csv",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "aruco-tags.csv";
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-document
-  .getElementById("export_tags_csv")
-  .addEventListener("click", exportTagsCsv);
 
 export { tagArray, pxToMm };
 export default ArUcoTag;

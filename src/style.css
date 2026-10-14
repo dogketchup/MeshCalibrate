@@ -294,13 +294,12 @@ code {
     border-right-color: var(--border);
   }
 }
-
 canvas#meshspace {
   width: 30vw;
   height: 30vh;
-  display: block;
+  display: inline-flex;
   position: fit;
-  top: 100;
+  top: -100;
   left: 100;
   z-index: -1;
 }
