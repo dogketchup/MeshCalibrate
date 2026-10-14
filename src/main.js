@@ -43,6 +43,8 @@ document.querySelector('#app').innerHTML = `
 
   <label for="generate_tag_code">ArUco marker id</label>
   <input type="range" value="40" min="0" max="100" class="slider" id="generate_tag_code"</input>
+  <label for="tag_count">ArUco tags per plate</label>
+  <input type="range" value="4" min="1" max="10" class="slider" id="tag_count"></input>
   <img id="aruco-marker" alt="ArUco marker" width="250" height="250" />
   <style>
     .vertical-stack {

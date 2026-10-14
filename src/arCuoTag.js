@@ -1,115 +1,107 @@
-// ArUco marker generator.
-//
-// Watches the #generate_tag_code slider (marker id) and the build-plate
-// sliders (canvas size). Paints the selected marker into the hidden
-// #plane_1_texture canvas and mirrors it into the visible #aruco-marker
-// <img>. Every repaint dispatches an "aruco:changed" window event so
-// threejsscene.js can re-upload the texture without the two modules
-// importing each other.
-//
-// Rapid slider input is coalesced: at most one refresh per animation
-// frame, and superseded async SVG loads are dropped. Without this, each
-// slider tick during a drag would queue a full repaint + full GPU texture
-// re-upload, which lags the machine.
 import { arucoToSVGString } from 'aruco-marker';
+import { optimizePhysics } from './physicsLayout.js'; // Adjust path if needed
 
 const range = document.getElementById('generate_tag_code');
 const sliderX = document.getElementById('build_plate_x');
 const sliderY = document.getElementById('build_plate_y');
+const tagCount = document.getElementById('tag_count');
 const img = document.querySelector('#aruco-marker');
 const canvas = document.getElementById('plane_1_texture');
 const ctx = canvas.getContext('2d');
-var countTags = 4;
+
+let countTags = 4; // default marker count
+
+function syncCountTags() {
+  let n = Math.round(Number(tagCount.value));
+  // Physics solver supports any count N >= 1 (odd or even)
+  countTags = Math.max(1, isNaN(n) ? 1 : n);
+}
 
 const PPM = 40; // canvas pixels per 1cm of build plate
-const MARKER_FRACTION = 1; // marker fills 85% of the smaller canvas side
-const MARGIN = 5;
 
 let markerId = Number(range.value);
-const markerImg = new Image(); // offscreen raster of the current marker SVG
+const markerImg = new Image(); // offscreen raster of current marker SVG
 
-// The canvas only feeds a three.js texture; keep it out of the layout.
+// Keep hidden texture canvas out of document layout
 canvas.style.display = 'none';
 
-// --- canvas sizing: follows the build-plate sliders ------------------------
+// --- Canvas sizing (follows build-plate sliders) --------------------------
 function sizeCanvas() {
   canvas.width = Math.max(1, Number(sliderX.value)) * PPM;
   canvas.height = Math.max(1, Number(sliderY.value)) * PPM;
 }
 
 function markerPixelSize() {
-  return Math.max(16, Math.round(Math.min(canvas.width, canvas.height) * MARKER_FRACTION/countTags));
+  const minDimension = Math.min(canvas.width, canvas.height);
+  // Scale tag size proportionally to 1/sqrt(N) so tags fit neatly without crowding
+  return Math.max(16, Math.round((minDimension * 0.7) / Math.sqrt(countTags)));
 }
 
-// --- marker raster: (re)load the SVG at the pixel size it will be drawn in -
+// --- Marker raster: (re)load SVG at target drawing pixel size -------------
 function loadMarker(id, px) {
-  markerImg.onload = null; // a duplicate src would not fire load again
+  markerImg.onload = null; // reset handler to prevent duplicate triggers
   markerImg.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(arucoToSVGString(id, px));
 }
 
+// --- Canvas Draw Function --------------------------------------------------
 function draw() {
+  if (!ctx || !canvas) return;
+
+  // 1. Clear canvas background
   ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  // Use a local: mutating the module-level countTags here used to halve
-  // it on every repaint (4 → 2 → 1 → 0.5 → ...), so the loop bound below
-  // silently shrank and the layout degraded on every slider touch.
-  const tags = countTags;
-  for(var i = 0; i < tags; i+=2)
-  {
-    if (markerImg.naturalWidth > 0) {
-      const size = markerPixelSize();
-      const x = (canvas.width - size) / 2;
-      const y = (canvas.height - size) / 2;
 
-      var hoppingFactorX = canvas.width/countTags;//
-      var hoppingFactorY = canvas.height/countTags;
+  // 2. Validate tag count & loaded marker image
+  const N = countTags;
+  if (!Number.isInteger(N) || N <= 0) return;
+  if (!markerImg || markerImg.naturalWidth === 0) return;
 
-      //draw odd
-      ctx.drawImage(
-        markerImg, 0, 0, markerImg.naturalWidth, markerImg.naturalHeight,
-        MARGIN*i, MARGIN*i*hoppingFactorY, size, size
-      );
-      //draw even
-      ctx.drawImage(
-        markerImg,0,0, markerImg.naturalWidth,markerImg.naturalHeight,
-        (2* MARGIN+hoppingFactorX),MARGIN*i*hoppingFactorY,size,size
-      )
-    }
+  // 3. Compute tag pixel size and optimal physics layout
+  const size = markerPixelSize();
+  const points = optimizePhysics(N, canvas.width, size);
+
+  // 4. Draw markers at computed center points
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+
+    // Convert center coordinates (p.x, p.y) to top-left canvas origins
+    const drawX = p.x - size / 2;
+    const drawY = p.y - size / 2;
+
+    ctx.drawImage(
+      markerImg,
+      0, 0, markerImg.naturalWidth, markerImg.naturalHeight,
+      drawX, drawY, size, size
+    );
   }
-
 }
 
-// --- notify the three.js side so it re-uploads the texture -----------------
+// --- Notify Three.js scene to re-upload canvas texture -------------------
 function changed() {
   window.dispatchEvent(new CustomEvent('aruco:changed'));
 }
 
-// One full refresh: (re)size the canvas, load the marker SVG for the
-// current slider values, then repaint + notify once the image is ready.
-//
-// Marker id / plate sliders both land here. A generation counter makes
-// stale loads harmless: when the user keeps dragging, the newest refresh
-// bumps refreshGen, so onloads from older loads see gen !== refreshGen and
-// skip the repaint + texture re-upload instead of all firing one by one.
+// --- Refresh pipeline (debounced async update) ---------------------------
 let refreshGen = 0;
 
 function refresh() {
   markerId = Number(range.value);
+  syncCountTags();
   const gen = ++refreshGen;
-  sizeCanvas(); // a canvas resize clears it; the marker is redrawn at the new size
+
+  sizeCanvas(); // Resizing canvas clears previous drawing
   loadMarker(markerId, markerPixelSize());
+
   markerImg.onload = () => {
-    if (gen !== refreshGen) return; // superseded by a newer slider position
+    if (gen !== refreshGen) return; // Superseded by a newer slider tick
     img.src = markerImg.src;
     draw();
     changed();
   };
 }
 
-// Coalesce rapid input ticks: schedule at most one refresh per animation
-// frame, so a fast drag produces ~one repaint+upload per frame instead of
-// one per slider tick.
+// Coalesce rapid slider input ticks into single animation frames
 let pendingFrame = 0;
 
 function scheduleRefresh() {
@@ -120,9 +112,11 @@ function scheduleRefresh() {
   });
 }
 
+// --- Event Listeners ------------------------------------------------------
 range.addEventListener('input', scheduleRefresh);
 sliderX.addEventListener('input', scheduleRefresh);
 sliderY.addEventListener('input', scheduleRefresh);
+tagCount.addEventListener('input', scheduleRefresh);
 
-// --- first paint -------------------------------------------------------------
+// --- Initial Paint --------------------------------------------------------
 refresh();

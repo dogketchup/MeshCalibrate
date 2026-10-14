@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { exportTo3MF } from 'three-3mf-exporter'
-
+import { sampleTextureToVertexColors } from './export3mf.js'
+import { PLYExporter } from 'three/addons/exporters/PLYExporter.js';
 
 
 const scene = new THREE.Scene();
@@ -44,7 +46,6 @@ const sliderXValue = document.getElementById('build_plate_x').value;
 const sliderYValue = document.getElementById('build_plate_y').value;
 
 
-const geometry = new THREE.BoxGeometry( sliderXValue, 1, sliderYValue );
 // The top (+Y) face of the cube carries the ArUco marker. arCuoTag.js
 // paints the marker into the hidden #plane_1_texture canvas and fires an
 // "aruco:changed" window event on every repaint; we just flip needsUpdate
@@ -55,12 +56,22 @@ plane1Texture.colorSpace = THREE.SRGBColorSpace;
 const faceMaterial = new THREE.MeshStandardMaterial( { color: 0xffffff } );
 const markerMaterial = new THREE.MeshStandardMaterial( { color: 0xffffff, map: plane1Texture } );
 // BoxGeometry face order: +X, -X, +Y, -Y, +Z, -Z
+const SUBDIVISIONS = 256;
+const geometry = new THREE.BoxGeometry(
+  sliderXValue,
+  1,
+  sliderYValue,
+  SUBDIVISIONS,
+  1,
+  SUBDIVISIONS
+);
 const material = [ faceMaterial, faceMaterial, markerMaterial, faceMaterial, faceMaterial, faceMaterial ];
 const cube = new THREE.Mesh( geometry, material );
 scene.add( cube );
 
 window.addEventListener( 'aruco:changed', () => {
   plane1Texture.needsUpdate = true;
+  sampleTextureToVertexColors(cube, plane1);
 });
 
 // 3MF export: the exporter module (export3mf.js) asks for mesh data via
@@ -130,12 +141,43 @@ function onChangeBuildX( event )
 function onChangeBuildY( event )
 {
   const mm = Number( event.target.value );
-  cube.scale.z = 1 + mm / 100;
+  cube.scale.z = 1;
   setTargetDistance();
+}
+
+function exportPLY() {
+  // 1. Bake current canvas texture into mesh vertex colors
+  sampleTextureToVertexColors(cube, plane1);
+  cube.updateMatrixWorld(true);
+
+  // 2. Initialize PLYExporter
+  const exporter = new PLYExporter();
+
+  // 3. Parse mesh geometry (export binary for compact file size)
+  exporter.parse(
+    cube,
+    function (plyData) {
+      const blob = new Blob([plyData], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'color-model.ply';
+
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      console.log('PLY exported with vertex colors!');
+    },
+    { binary: true } // binary format includes r, g, b per vertex
+  );
 }
 
 async function exportAll(event)
 {
+  cube.updateMatrixWorld(true);
+  sampleTextureToVertexColors(cube, plane1);
   console.log(cube);
   //const blob = exportTo3MF(cube);
   const blob = await exportTo3MF(cube);
@@ -143,25 +185,51 @@ async function exportAll(event)
   const link = document.createElement('a');
   link.href = url;
   link.download = 'my-custom-model.3mf';
-
-
   document.body.appendChild(link);
     link.click();
-
-
-
     // 4. Clean up memory and DOM elements
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-
     console.log('Cube successfully exported!');
-
-
 }
+
+function exportGLB() {
+  var cubeTemp = cube.clone();
+cubeTemp.updateMatrixWorld(true);
+  cubeTemp.scale.setScalar(10);
+  // Bake vertex colors first
+  sampleTextureToVertexColors(cubeTemp, plane1);
+
+  const exporter = new GLTFExporter();
+
+  exporter.parse(
+    cube,
+    function (gltf) {
+      const blob = new Blob([gltf], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'color-model.glb';
+
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      console.log('GLB exported with color attributes!');
+    },
+    function (error) {
+      console.error('An error occurred during GLTF export:', error);
+    },
+    { binary: true } // Binary .glb container
+  );
+}
+
+
 
 sliderX.addEventListener( 'input', onChangeBuildX );
 sliderY.addEventListener( 'input', onChangeBuildY );
-exportBtn.addEventListener('click',exportAll);
+exportBtn.addEventListener('click',exportGLB);
 
 function animate( time ) {
 

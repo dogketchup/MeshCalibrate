@@ -1,17 +1,3 @@
-// Force-directed / Coulomb-repulsion layout solver.
-//
-// Pseudocode of record: documentation/todo/implement-physics-maximal-spacing.md
-//
-// The pseudocode's hyperparameters (kRepulsion = 1.0, kWall = 1.0,
-// `IF forceMag > 1.0: normalize`) are tuned for a UNIT-square domain
-// (distances of order 1). We therefore simulate in normalized [0, 1]²
-// coordinates so the constants behave identically for any canvasSize,
-// and convert back to canvas pixels only in the returned points.
-//
-// Determinism: point positions are seeded from a per-markerId hash + N,
-// so the same (N, tagSize, L) always produces the same layout — no
-// jitter when unrelated UI state changes.
-
 /**
  * FNV-1a hash of a numeric id — small, stable, good enough for seeding.
  * @param {number} n
@@ -50,15 +36,16 @@ function clamp(v, lo, hi) {
  *
  * @param {number} N number of points
  * @param {number} tagUnit fraction of one side the tag occupies (tagSize / L)
+ * @param {number} marginUnit fraction of one side reserved for margin (margin / L)
  * @param {number} iterations max simulation iterations
  * @param {() => number} rng deterministic source of initial positions
  * @returns {{x: number, y: number}[]} unit-square points (centers)
  */
-function optimizePhysicsUnit(N, tagUnit, iterations, rng) {
+function optimizePhysicsUnit(N, tagUnit, marginUnit, iterations, rng) {
   const L = 1.0;
   const halfW = tagUnit / 2;
-  const minBound = halfW;
-  const maxBound = L - halfW;
+  const minBound = halfW + marginUnit;
+  const maxBound = L - (halfW + marginUnit);
 
   // 1. Initialization: seed N points randomly within the allowed boundary
   const points = new Array(N);
@@ -70,9 +57,9 @@ function optimizePhysicsUnit(N, tagUnit, iterations, rng) {
   }
 
   // Hyperparameters (unit-scale, per the pseudocode)
-  const kRepulsion = 1.0; // Pairwise Coulomb force constant
-  const kWall = 1.0; // Wall repulsion constant
-  const initialStep = L * 0.1; // Maximum displacement per step
+  const kRepulsion = 1.5; // Pairwise Coulomb force constant
+  const kWall = 0.1; // Wall repulsion constant
+  const initialStep = L * 0.01; // Maximum displacement per step
   const epsilon = 1e-4; // Safeguard against division by zero
 
   // 2. Main simulation loop (iterative force relaxation)
@@ -153,43 +140,31 @@ function optimizePhysicsUnit(N, tagUnit, iterations, rng) {
 /**
  * Maximize spacing between tags with a Coulomb-repulsion layout.
  *
- * Runs a deterministic force-relaxation simulation: each pair of tags
- * repels with F = k / d², and each tag is pushed away from the canvas
- * boundary (so a tag can never sit half-off the edge). Step size
- * anneals linearly to zero over `iterations`; early exit when the
- * maximum point displacement drops below the epsilon threshold.
- *
- * Coordinates returned are canvas-pixel (y-down), matching the
- * canvas-based tag layout in threejsscene.js.
- *
- * NOTE: if `tagSize` is too large to fit N non-overlapping tags in an
- * L×L canvas, the physics cannot produce a perfect solution — the
- * caller is responsible for choosing a tagSize that satisfies
- * `tagSize ≤ L * 1 / sqrt(N)` (see documentation/arCuoTag.puml).
- *
  * @param {number} N number of tags
- * @param {number} canvasSize square canvas side length (pixels); the
- *   usable region is canvasSize² (centered square)
- * @param {number} tagWidth tag side length (pixels); a tag must fit
- *   entirely within the canvas, so points stay ≥ tagWidth/2 from each edge
+ * @param {number} canvasSize square canvas side length (pixels)
+ * @param {number} tagWidth tag side length (pixels)
+ * @param {number} [margin=0] extra margin padding from canvas border (pixels)
  * @param {number} [iterations=300] max simulation iterations
  * @param {number} [seed] deterministic seed (default derived from N)
  * @returns {{x: number, y: number}[]} N points, canvas-pixel coordinates
  */
-export function optimizePhysics(N, canvasSize, tagWidth, iterations = 300, seed) {
+export function optimizePhysics(N, canvasSize, tagWidth, margin = 0, iterations = 300, seed) {
   if (!Number.isInteger(N) || N <= 0) {
     throw new Error(`optimizePhysics: N must be a positive integer, got ${N}`);
   }
   const L = Math.max(1, Math.round(canvasSize));
   const w = Math.max(1, Math.round(tagWidth));
-  if (w > L) {
-    throw new Error(`optimizePhysics: tagWidth ${w}px > canvas ${L}px`);
+  const m = Math.max(0, Math.round(margin));
+
+  if (w + 2 * m > L) {
+    throw new Error(`optimizePhysics: (tagWidth ${w}px + margin ${2 * m}px) > canvas ${L}px`);
   }
+
   const iters = Number.isInteger(iterations) && iterations > 0 ? iterations : 300;
   const rng = mulberry32(seed === undefined ? (hash(N) ^ 0x9e3779b9) >>> 0 : seed >>> 0);
 
   // Oversized case: tags cannot physically fit without overlap.
-  // Fall back to a deterministic uniform grid (best-case minimal spacing).
+  // Fall back to a deterministic uniform grid.
   const cols = Math.ceil(Math.sqrt(N));
   const rows = Math.ceil(N / cols);
   const cellX = L / cols;
@@ -204,14 +179,14 @@ export function optimizePhysics(N, canvasSize, tagWidth, iterations = 300, seed)
     };
   }
   if (w * Math.sqrt(N) > L * 2) {
-    // Clamp into the canvas so tags at least stay on-screen.
+    // Clamp into the canvas boundary including margin
     for (const p of points) {
-      p.x = clamp(p.x, w / 2, L - w / 2);
-      p.y = clamp(p.y, w / 2, L - w / 2);
+      p.x = clamp(p.x, w / 2 + m, L - (w / 2 + m));
+      p.y = clamp(p.y, w / 2 + m, L - (w / 2 + m));
     }
     return points;
   }
 
-  const unitPoints = optimizePhysicsUnit(N, w / L, iters, rng);
+  const unitPoints = optimizePhysicsUnit(N, w / L, m / L, iters, rng);
   return unitPoints.map((p) => ({ x: p.x * L, y: p.y * L }));
 }
