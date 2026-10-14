@@ -57,6 +57,10 @@ document.querySelector('#app').innerHTML = `
   </style>
   <canvas id="plane_1_texture" width="400" height="400"></canvas>
 
+    <div class="controls">
+      <button id="export_mesh">Export mesh + texture (3MF)</button>
+    </div>
+
 </div>
 
 </section>
@@ -68,5 +72,6 @@ document.querySelector('#app').innerHTML = `
 // only after the markup above has been inserted.
 await import ('./threejsscene.js')
 await import ('./arCuoTag.js')
+await import ('./export3mf.js')
 
 

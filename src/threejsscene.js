@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { exportTo3MF } from 'three-3mf-exporter'
 
 
 
@@ -62,6 +63,20 @@ window.addEventListener( 'aruco:changed', () => {
   plane1Texture.needsUpdate = true;
 });
 
+// 3MF export: the exporter module (export3mf.js) asks for mesh data via
+// window event; we answer with raw geometry + current scale. Coordinates
+// are cm (box units), Y-up — the exporter converts to millimeters.
+window.addEventListener( 'mesh:export-request', () => {
+  window.dispatchEvent( new CustomEvent( 'mesh:export-data', {
+    detail: {
+      positions: Array.from( cube.geometry.attributes.position.array ),
+      uvs: Array.from( cube.geometry.attributes.uv.array ),
+      indices: Array.from( cube.geometry.index.array ),
+      scale: [ cube.scale.x, cube.scale.y, cube.scale.z ],
+    },
+  } ) );
+});
+
 camera.position.z = 5;
 controls.target.set( 0, 0, 0 );
 
@@ -102,6 +117,7 @@ function lerpCamera()
 
 const sliderX = document.getElementById('build_plate_x');
 const sliderY = document.getElementById('build_plate_y');
+const exportBtn = document.getElementById('export_mesh');
 
 function onChangeBuildX( event )
 {
@@ -118,8 +134,34 @@ function onChangeBuildY( event )
   setTargetDistance();
 }
 
+async function exportAll(event)
+{
+  console.log(cube);
+  //const blob = exportTo3MF(cube);
+  const blob = await exportTo3MF(cube);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'my-custom-model.3mf';
+
+
+  document.body.appendChild(link);
+    link.click();
+
+
+
+    // 4. Clean up memory and DOM elements
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    console.log('Cube successfully exported!');
+
+
+}
+
 sliderX.addEventListener( 'input', onChangeBuildX );
 sliderY.addEventListener( 'input', onChangeBuildY );
+exportBtn.addEventListener('click',exportAll);
 
 function animate( time ) {
 
@@ -130,3 +172,4 @@ function animate( time ) {
   renderer.render( scene, camera );
 
 }
+
