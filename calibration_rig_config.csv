@@ -1,0 +1,4 @@
+tag_id,center_x_mm,center_y_mm,center_z_mm,size_mm,plane_id
+0,27.38272825,72.61727175,0.0,35,plane_1
+102,0,27.38272825,62.61727175,35,plane_2
+53,27.38272825,0,17.38272825,35,plane_3
