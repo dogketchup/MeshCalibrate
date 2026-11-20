@@ -1,6 +1,9 @@
 import { defineConfig } from 'vite';
+import meshCalibrateBackend from './server/backend.js';
 
 export default defineConfig({
+  // Node backend on the same port: /simulate (OpenCV calibration simulation), /tutorial
+  plugins: [meshCalibrateBackend()],
   server: {
     host: '0.0.0.0',
     port: 5713,
