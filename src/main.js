@@ -19,6 +19,8 @@ const FIELDS = [
 document.querySelector('#app').innerHTML = `
 <aside id="panel">
   <h1>MeshCalibrate</h1>
+  <nav id="links"><a id="simlink" href="/simulate" title="render this rig through a known camera and calibrate it with OpenCV">simulate calibration</a>
+    <a href="/tutorial">tutorial</a></nav>
   <div id="mode" role="group" aria-label="what to make">
     ${Object.entries(MODES).map(([k, m]) => `<button type="button" data-mode="${k}" aria-pressed="${k === DEFAULTS.mode}">${m.label}</button>`).join('')}
   </div>
@@ -112,6 +114,10 @@ function rebuild() {
   err.textContent = '';
   document.querySelectorAll('#exports button').forEach((b) => (b.disabled = false));
   current = { rig, meshes };
+  const sp = rig.params;  // the simulation uses exactly this rig
+  document.getElementById('simlink').href = '/simulate?' + new URLSearchParams({ mode: sp.mode, faceMm: sp.faceMm,
+    tagSizeMm: sp.tagSizeMm, tagsPerPlane: sp.tagsPerPlane, baseId: sp.baseId, thicknessMm: sp.thicknessMm,
+    inlayDepthMm: sp.inlayDepthMm, layout: sp.layout });
   view.setRig(meshes, rig.params);
 
   const p = rig.params;

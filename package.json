@@ -7,14 +7,16 @@
     "dev": "vite --host 0.0.0.0 --port 5713",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node tests/rig.test.mjs && node tests/export3mf.test.mjs"
+    "test": "node tests/rig.test.mjs && node tests/export3mf.test.mjs && node tests/simulate.test.mjs"
   },
   "devDependencies": {
     "jszip": "^3.10.2",
     "vite": "^8.3.0"
   },
   "dependencies": {
+    "@techstark/opencv-js": "^4.10.0-release.1",
     "aruco-marker": "^3.0.1",
+    "marked": "^16.4.2",
     "three": "^0.186.1",
     "three-3mf-exporter": "^45.2.0"
   }

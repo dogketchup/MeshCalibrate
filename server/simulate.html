@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>MeshCalibrate - simulate</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,">
+<style>
+:root { --bg:#fff; --fg:#1b1f24; --mut:#57606a; --line:#d0d7de; --panel:#f6f8fa; --acc:#1f2328; --ok:#1a7f37; --bad:#cf222e; --warn:#9a6700; }
+@media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --fg:#e6edf3; --mut:#8b949e; --line:#30363d; --panel:#161b22; --acc:#e6edf3; --ok:#3fb950; --bad:#f85149; --warn:#d29922; } }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+.wrap { display:flex; min-height:100vh; }
+aside { width:300px; flex:none; padding:16px; border-right:1px solid var(--line); background:var(--bg); }
+main { flex:1; padding:16px 20px; min-width:0; }
+h1 { font-size:20px; margin:0 0 4px; } h2 { font-size:15px; margin:18px 0 6px; }
+nav { font-size:13px; margin-bottom:10px; } nav a { margin-right:12px; color:inherit; }
+.seg { display:flex; margin:8px 0; border:1px solid var(--acc); border-radius:6px; overflow:hidden; }
+.seg button { flex:1; padding:7px 4px; border:0; background:transparent; color:var(--fg); font:600 13px system-ui; cursor:pointer; }
+.seg button[aria-pressed="true"] { background:var(--acc); color:var(--bg); }
+label { display:block; font-size:12px; color:var(--mut); margin-top:6px; }
+input { width:100%; padding:4px 6px; font-size:13px; border:1px solid var(--line); border-radius:4px; background:var(--bg); color:var(--fg); }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:0 8px; }
+#run { width:100%; margin-top:14px; padding:9px; font:600 14px system-ui; border:0; border-radius:6px; background:var(--acc); color:var(--bg); cursor:pointer; }
+#run:disabled { opacity:.5; cursor:wait; }
+.note { font-size:12px; color:var(--mut); }
+table { border-collapse:collapse; font-size:13px; margin:4px 0 10px; }
+td, th { border-bottom:1px solid var(--line); padding:3px 8px; text-align:right; white-space:nowrap; }
+td:first-child, th:first-child { text-align:left; }
+th { color:var(--mut); font-weight:600; }
+.cards { display:flex; flex-wrap:wrap; gap:12px; }
+.card { border:1px solid var(--line); border-radius:8px; padding:8px 12px; background:var(--panel); }
+.ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
+.views { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:12px; margin-top:8px; }
+figure { margin:0; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--panel); }
+figure img { width:100%; display:block; }
+figcaption { font-size:12px; padding:5px 8px; color:var(--mut); }
+#status { margin-top:8px; font-size:13px; min-height:18px; }
+@media (max-width:760px) { .wrap { flex-direction:column; } aside { width:auto; border-right:0; border-bottom:1px solid var(--line); } }
+</style></head><body><div class="wrap">
+<aside>
+  <h1>Simulate calibration</h1>
+  <nav><a href="/">&larr; generator</a><a href="/tutorial">tutorial</a></nav>
+  <div class="note">Photographs this rig through a known camera, then calibrates with OpenCV in the
+    Node backend (ArUco detection, Zhang, solvePnP) and compares every estimate with the truth.</div>
+  <div class="seg" id="views">
+    <button type="button" data-v="single">single view</button>
+    <button type="button" data-v="multi" aria-pressed="true">multi-view</button>
+  </div>
+  <div class="seg" id="mode">
+    <button type="button" data-v="rig" aria-pressed="true">3D rig</button>
+    <button type="button" data-v="plane">one plane</button>
+  </div>
+  <h2>Rig</h2>
+  <div class="grid2">
+    <div><label>face size (mm)</label><input id="faceMm" type="number" value="100"></div>
+    <div><label>marker size (mm)</label><input id="tagSizeMm" type="number" value="35"></div>
+    <div><label>markers per face</label><input id="tagsPerPlane" type="number" value="4"></div>
+    <div><label>first marker id</label><input id="baseId" type="number" value="40"></div>
+  </div>
+  <h2>Camera (the truth)</h2>
+  <div class="grid2">
+    <div><label>width px</label><input id="W" type="number" value="1280"></div>
+    <div><label>height px</label><input id="H" type="number" value="960"></div>
+    <div><label>fx = fy (px)</label><input id="fx" type="number" value="1100"></div>
+    <div><label>principal point cx</label><input id="cx" type="number" value="645"></div>
+    <div><label>principal point cy</label><input id="cy" type="number" value="478"></div>
+    <div><label>k1</label><input id="k1" type="number" step="0.01" value="-0.08"></div>
+    <div><label>k2</label><input id="k2" type="number" step="0.01" value="0.02"></div>
+    <div><label>noise (grey levels)</label><input id="noise" type="number" step="0.5" value="2"></div>
+    <div id="nwrap"><label>views (multi)</label><input id="nViews" type="number" value="8"></div>
+    <div><label>random seed</label><input id="seed" type="number" value="1"></div>
+  </div>
+  <button id="run">run simulation</button>
+  <div id="status"></div>
+</aside>
+<main>
+  <div id="out" class="note">Choose single view or multi-view and press <b>run simulation</b>.
+    A run takes a few seconds (rendering + OpenCV).</div>
+</main>
+</div>
+<script>
+const $ = (s) => document.querySelector(s);
+const q = new URLSearchParams(location.search);
+for (const k of ['faceMm', 'tagSizeMm', 'tagsPerPlane', 'baseId']) if (q.has(k)) $('#' + k).value = q.get(k);
+const extra = {};                                  // generator settings we pass through unchanged
+for (const k of ['thicknessMm', 'inlayDepthMm', 'layout']) if (q.has(k)) extra[k] = q.get(k);
+function seg(id, val) {
+  document.querySelectorAll(`#${id} button`).forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === val)));
+  if (id === 'views') $('#nwrap').style.opacity = val === 'single' ? 0.4 : 1;
+}
+const segVal = (id) => document.querySelector(`#${id} button[aria-pressed="true"]`).dataset.v;
+for (const id of ['views', 'mode']) document.querySelectorAll(`#${id} button`).forEach((b) => b.addEventListener('click', () => seg(id, b.dataset.v)));
+if (q.get('mode') === 'plane') seg('mode', 'plane');
+if (q.get('views') === 'single') seg('views', 'single');
+const num = (id) => Number($('#' + id).value);
+const f = (v, d = 2) => (v === null || v === undefined) ? '-' : Number(v).toFixed(d);
+const cls = (bad, warn) => (bad ? 'bad' : warn ? 'warn' : 'ok');
+
+async function run() {
+  const body = {
+    views: segVal('views'), nViews: num('nViews'), noise: num('noise'), seed: num('seed'),
+    rig: { mode: segVal('mode'), faceMm: num('faceMm'), tagSizeMm: num('tagSizeMm'), tagsPerPlane: num('tagsPerPlane'), baseId: num('baseId'), ...extra },
+    camera: { W: num('W'), H: num('H'), fx: num('fx'), fy: num('fx'), cx: num('cx'), cy: num('cy'), k1: num('k1'), k2: num('k2') },
+  };
+  $('#run').disabled = true;
+  $('#status').textContent = 'rendering and calibrating...';
+  const t0 = performance.now();
+  try {
+    const r = await (await fetch('/api/simulate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
+    if (!r.ok) throw new Error(r.error);
+    show(r);
+    $('#status').innerHTML = `<span class="ok">done</span> in ${f((performance.now() - t0) / 1000, 1)} s`;
+    history.replaceState(null, '', '?' + new URLSearchParams({ mode: body.rig.mode, views: body.views, faceMm: body.rig.faceMm, tagSizeMm: body.rig.tagSizeMm, tagsPerPlane: body.rig.tagsPerPlane, baseId: body.rig.baseId, ...extra }));
+  } catch (e) {
+    $('#status').innerHTML = `<span class="bad">${String(e.message || e)}</span>`;
+  }
+  $('#run').disabled = false;
+}
+
+function show(r) {
+  const c = r.comparison, k = r.calibration, t = r.camera_true;
+  const rows = [
+    ['fx (px)', t.fx, k.K[0][0], f(c.fx_error_pct, 3) + ' %', Math.abs(c.fx_error_pct) > 2, Math.abs(c.fx_error_pct) > 0.5],
+    ['fy (px)', t.fy, k.K[1][1], f(c.fy_error_pct, 3) + ' %', Math.abs(c.fy_error_pct) > 2, Math.abs(c.fy_error_pct) > 0.5],
+    ['cx (px)', t.cx, k.K[0][2], f(k.K[0][2] - t.cx, 2) + ' px', false, false],
+    ['cy (px)', t.cy, k.K[1][2], f(k.K[1][2] - t.cy, 2) + ' px', false, false],
+    ['k1', t.k1, k.dist[0], f(k.dist[0] - t.k1, 4), false, false],
+    ['k2', t.k2, k.dist[1], f(k.dist[1] - t.k2, 4), false, false],
+    ['horizontal FOV (deg)', t.fov_deg.h, k.fov_deg.h, f(k.fov_deg.h - t.fov_deg.h, 2), false, false],
+  ];
+  const pe = c.position_error_mm, re = c.rotation_error_deg;
+  let h = `<h2>${r.views === 'single' ? 'Single view' : `Multi-view (${r.n} views)`} - ${r.rig.name}, markers ${r.rig.ids[0]}-${r.rig.ids[1]} on ${r.rig.faces.join(', ')}</h2>
+  <div class="cards">
+   <div class="card"><b>camera: true vs estimated</b><table><tr><th></th><th>true</th><th>estimated</th><th>error</th></tr>
+     ${rows.map(([n, a, b, e, bad, warn]) => `<tr><td>${n}</td><td>${f(a, n.startsWith('k') ? 3 : 2)}</td><td>${f(b, n.startsWith('k') ? 4 : 2)}</td><td class="${cls(bad, warn)}">${e}</td></tr>`).join('')}
+   </table></div>
+   <div class="card"><b>how well it fits</b><table>
+     <tr><td>reprojection rms</td><td class="${cls(k.rms_px > 1, k.rms_px > 0.5)}">${f(k.rms_px, 3)} px</td></tr>
+     <tr><td>principal point error</td><td class="${cls(c.principal_point_error_px > 25, c.principal_point_error_px > 8)}">${f(c.principal_point_error_px, 1)} px</td></tr>
+     <tr><td>camera position error</td><td class="${pe ? cls(pe.max > 10, pe.max > 3) : ''}">${pe ? `${f(pe.mean, 2)} mean / ${f(pe.max, 2)} max mm` : '-'}</td></tr>
+     <tr><td>camera rotation error</td><td>${re ? f(re.max, 3) + ' deg max' : '-'}</td></tr>
+     <tr><td>markers detected</td><td class="${cls(c.detected.markers < c.detected.visible * 0.8, c.detected.markers < c.detected.visible)}">${c.detected.markers} of ${c.detected.visible} visible</td></tr>
+     <tr><td>planar views / corners</td><td>${k.planar_views} / ${k.corners}</td></tr>
+     <tr><td>markers reach</td><td>${Math.round(k.reach * 100)} % to the image corners</td></tr>
+     <tr><td>time</td><td>${f(r.timing.total_ms / 1000, 1)} s (render ${f(r.timing.render_ms / 1000, 1)} s)</td></tr>
+   </table></div>
+   <div class="card" style="max-width:420px"><b>what the calibration could solve</b><ul class="note" style="padding-left:16px;margin:4px 0">${k.notes.map((n) => `<li>${n}</li>`).join('')}</ul>
+     <div class="note">${r.views === 'single'
+       ? (r.rig.mode === 'rig' ? 'One photo of the 3D rig still gives three tilted planes, so focal length and principal point are solvable; distortion needs markers near the image edges.' : 'One photo of a flat plate is one plane: only the focal length can be solved (the principal point is held at the centre). Switch to multi-view.')
+       : 'Each face in each photo is a planar view (Zhang). Photos aimed past the rig put markers near the edges, where distortion shows.'}
+       <a href="/tutorial">How this works</a></div></div>
+  </div>
+  <h2>Per view</h2><table><tr><th>view</th><th>distance mm</th><th>detected / visible</th><th>reprojection px</th><th>position error mm</th><th>rotation error deg</th></tr>
+   ${r.shots.map((s) => `<tr><td>${s.i}</td><td>${f(s.distance_mm, 0)}</td><td>${s.detected} / ${s.visible}</td><td>${f(s.reproj_rms_px, 3)}</td><td>${f(s.position_error_mm, 2)}</td><td>${f(s.rotation_error_deg, 3)}</td></tr>`).join('')}</table>
+  <div class="note">Images: green = detected marker (yellow dot = its corner 0, top-left as printed), magenta = the rig's corners projected back with the
+    calibrated camera, axes = the rig frame (x red, y green, z blue, 40 mm).</div>
+  <div class="views">${r.shots.map((s) => `<figure><img alt="view ${s.i}" src="data:image/png;base64,${s.png}"><figcaption>view ${s.i}: ${s.detected}/${s.visible} markers,
+    reprojection ${f(s.reproj_rms_px, 2)} px, camera ${f(s.position_error_mm, 2)} mm off</figcaption></figure>`).join('')}</div>`;
+  $('#out').innerHTML = h;
+}
+$('#run').addEventListener('click', run);
+</script></body></html>

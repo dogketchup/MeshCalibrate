@@ -26,6 +26,35 @@ size, markers per face, first marker id, plate thickness and inlay depth. The pr
 or plate with the origin axes (x red, y green, z blue) at its origin; the small squares show each
 face as printed with its ids.
 
+## Simulated calibration (`/simulate`) and the tutorial (`/tutorial`)
+
+`npm run dev` (and `npm run preview`) also run a small **Node backend** on the same port
+(`server/backend.js`, a Vite plugin):
+
+- **http://localhost:5713/simulate** - photographs the rig you designed through a known camera
+  (with lens distortion and sensor noise), then calibrates it with **OpenCV running in Node**
+  (`opencv.js`, OpenCV compiled to WebAssembly): ArUco detection, Zhang calibration with every face
+  of every photo as a planar view, and `solvePnP` per photo. Every estimate is compared with the
+  truth, and every photo is shown with its detections, the reprojected rig corners and the rig axes.
+  The **single view / multi-view** toggle picks one photo or N photos from around the rig; the
+  **3D rig / one plane** toggle picks the target. The generator's "simulate calibration" link opens
+  it with the current rig. API: `POST /api/simulate` with
+  `{"views": "single"|"multi", "nViews", "noise", "seed", "rig": {...generator params}, "camera": {"W","H","fx","fy","cx","cy","k1","k2"}}`.
+- **http://localhost:5713/tutorial** - [TUTORIAL.md](TUTORIAL.md) rendered: how the program is put
+  together and the maths of every step (ArUco, the rig frame, the printable meshes, the camera model,
+  PnP, Zhang, epipolar geometry, the simulation).
+
+What to expect, with the defaults (1280 x 960, fx 1100, k1 -0.08):
+
+| | focal length | principal point | camera positions |
+|---|---|---|---|
+| 3D rig, multi-view (8) | 0.1 % | 1.5 px | 0.4 mm mean |
+| 3D rig, single view | 0.3 % | 10 px | 1.6 mm |
+| one plane, multi-view (10) | 1.5 % | 13 px | 5 mm mean |
+| one plane, single view | 0.2 % (principal point held at the centre) | - | 1.6 mm |
+
+The backend needs the Node server: a static `npm run build` deploys the generator only.
+
 ## The rig
 
 All numbers are millimetres in the **rig frame**:
@@ -128,12 +157,16 @@ photos that fill the frame, then pass `--intrinsics1/2`, for the best stereo res
 ## Tests
 
 ```
-npm test                                   # geometry: closed meshes, no overlap, volumes; 3MF structure
+npm test                                   # geometry, 3MF structure, and the /simulate backend end to end
 node tests/rig.test.mjs OUT && python tests/check_rig_opencv.py OUT OUT/plane
 node tests/make_calibrate_script.mjs OUT OUT/plane     # the two scripts exactly as the buttons build them
 python tests/check_calibrate_script.py OUT OUT/plane   # calibrate.py end to end on rendered photos
 python tests/check_stereo_script.py OUT OUT/plane      # stereo_calibrate.py end to end on rendered pairs
 ```
+
+`npm test` also runs `tests/simulate.test.mjs`: the /simulate backend end to end (render, opencv.js
+detection and calibration, comparison with the truth) for single view and multi-view, 3D rig and
+one plane.
 
 Both modes are covered. The second line renders every face, and the whole rig or plate through a
 pinhole camera, from the exported STL geometry (3D rig in OUT, one plane in OUT/plane). It then checks with OpenCV that the detected ids and corners match rig.json, and that

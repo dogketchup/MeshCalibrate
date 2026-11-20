@@ -187,3 +187,6 @@ body[data-mode='plane'] .note[data-for='rig'] {
     height: 70svh;
   }
 }
+
+#links { display: flex; gap: 14px; font-size: 13px; margin: -4px 0 10px; }
+#links a { color: inherit; }
