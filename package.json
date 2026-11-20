@@ -4,19 +4,18 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host 0.0.0.0 --port 5713",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node tests/rig.test.mjs && node tests/export3mf.test.mjs"
   },
   "devDependencies": {
+    "jszip": "^3.10.2",
     "vite": "^8.3.0"
   },
   "dependencies": {
     "aruco-marker": "^3.0.1",
     "three": "^0.186.1",
     "three-3mf-exporter": "^45.2.0"
-  },
-    "scripts": {
-  "dev": "vite --host 0.0.0.0 --port 5713"
   }
 }

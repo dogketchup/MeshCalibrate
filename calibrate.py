@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 import csv
+import json
+import sys
 
 
 def show_debug_step(title, image, math_explanation=""):
@@ -21,6 +23,20 @@ def show_debug_step(title, image, math_explanation=""):
     cv2.imshow(title, image)
     cv2.waitKey(0)  # BREAKPOINT: Pauses execution until keypress
     cv2.destroyWindow(title)
+
+
+def load_rig_json(json_path):
+    """
+    Loads a rig.json exported by the MeshCalibrate page. Every tag carries its
+    four 3D corners in the rig frame (mm), already in OpenCV's ArUco order
+    (TL, TR, BR, BL as printed), so nothing has to be inferred from plane
+    names or tag ids. Returns ({tag_id: (4, 3) float32 corners}, dictionary).
+    """
+    with open(json_path, "r", encoding="utf-8") as f:
+        rig = json.load(f)
+    rig_data = {int(t["id"]): np.array(t["corners"], dtype=np.float32) for t in rig["tags"]}
+    dictionary = getattr(cv2.aruco, rig.get("dictionary", "DICT_ARUCO_ORIGINAL"))
+    return rig_data, dictionary
 
 
 def load_rig_config(csv_path):
@@ -195,18 +211,26 @@ def calibrate_camera(obj_points, img_points, image_size):
 
 
 if __name__ == "__main__":
-    # 1. Load 3D physical coordinates from CSV
+    # usage: python calibrate.py [rig.json | calibration_rig_config.csv] [photo]
+    rig_path = sys.argv[1] if len(sys.argv) > 1 else "calibration_rig_config.csv"
+    dictionary_type = cv2.aruco.DICT_ARUCO_ORIGINAL
+
+    # 1. Load 3D physical coordinates: rig.json carries exact corners, the CSV only centres
     try:
-        rig_data = load_rig_config("calibration_rig_config.csv")
-        print(f"Loaded {len(rig_data)} tags from CSV config.")
+        if rig_path.lower().endswith(".json"):
+            rig_data, dictionary_type = load_rig_json(rig_path)
+            print(f"Loaded {len(rig_data)} tags from {rig_path}.")
+        else:
+            rig_data = load_rig_config(rig_path)
+            print(f"Loaded {len(rig_data)} tags from CSV config.")
     except FileNotFoundError:
-        print("Error: 'calibration_rig_config.csv' not found.")
+        print(f"Error: '{rig_path}' not found.")
         rig_data = {}
 
     # 2. Detect 2D pixel coordinates from photo with visual waitKeys
-    photo_filename = "rig_photo.png"
+    photo_filename = sys.argv[2] if len(sys.argv) > 2 else "rig_photo.png"
     try:
-        detected_tags, img_shape, raw_image = detect_2d_corners(photo_filename)
+        detected_tags, img_shape, raw_image = detect_2d_corners(photo_filename, dictionary_type)
         image_size = (img_shape[1], img_shape[0])
     except FileNotFoundError:
         print(f"Error: '{photo_filename}' not found.")
