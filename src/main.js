@@ -1,5 +1,8 @@
 import './style.css';
 import { buildRig, rigJsonText, rigToCsv, DEFAULTS, MODES } from './rig/rigModel.js';
+import { calibrateScript, stereoScript } from './rig/calibrateScript.js';
+import calibrateTemplate from './rig/calibrate.py?raw';
+import stereoTemplate from './rig/stereo_calibrate.py?raw';
 import { buildRigMesh, meshToStl } from './rig/rigMesh.js';
 import { DICTIONARY } from './rig/arucoBits.js';
 import { createRigScene } from './threejsscene.js';
@@ -39,6 +42,8 @@ document.querySelector('#app').innerHTML = `
     <button id="x_json" title="every marker's 3D corners in the rig frame - what calibration reads">rig.json</button>
     <button id="x_csv" title="tag centres only, the old calibration_rig_config.csv columns">CSV</button>
     <button id="x_glb" title="for viewers; glTF is Y-up">GLB</button>
+    <button id="x_py" title="a standalone Python camera calibration script with this rig built in: python calibrate.py photos/*.jpg">calibrate.py</button>
+    <button id="x_stereo" title="calibrate a stereo camera pair with this rig: R, T, essential E, fundamental F, epipolar check, rectification">stereo_calibrate.py</button>
   </div>
 </aside>
 <main id="view"></main>
@@ -152,6 +157,8 @@ document.getElementById('x_stl_black').addEventListener('click', () => download(
 document.getElementById('x_json').addEventListener('click', () => download(new Blob([rigJsonText(current.rig)], { type: 'application/json' }), 'rig.json'));
 document.getElementById('x_csv').addEventListener('click', () => download(new Blob([rigToCsv(current.rig)], { type: 'text/csv' }), 'calibration_rig_config.csv'));
 document.getElementById('x_glb').addEventListener('click', async () => download(await view.exportGLB(), `${base()}.glb`));
+document.getElementById('x_stereo').addEventListener('click', () => download(new Blob([stereoScript(calibrateTemplate, stereoTemplate, rigJsonText(current.rig))], { type: 'text/x-python' }), 'stereo_calibrate.py'));
+document.getElementById('x_py').addEventListener('click', () => download(new Blob([calibrateScript(calibrateTemplate, rigJsonText(current.rig))], { type: 'text/x-python' }), 'calibrate.py'));
 
 let pending = 0;
 const schedule = () => {

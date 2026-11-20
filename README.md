@@ -83,11 +83,56 @@ under every black cell and the black part fills it flush with the face (`inlay d
 `calibrate.py` reads either file: `python calibrate.py rig.json photo.png` (the CSV path still works
 as before).
 
+## Calibrating cameras with the printed rig
+
+Two more export buttons give standalone Python scripts with **this rig built in** (its rig.json is
+embedded, so the one file is all you need; works for the 3D rig and for one plane). Needs
+`pip install opencv-python numpy`.
+
+- **calibrate.py** - one camera.
+  ```
+  python calibrate.py photos/            # or photo1.jpg photo2.jpg ..., or --webcam 0 (SPACE keeps a frame)
+  python calibrate.py --intrinsics calibration.json photo.jpg    # known camera: only where it is
+  ```
+  Detects the markers, matches them to the rig (pose hypotheses, so even repeated ids work),
+  calibrates K and distortion and solves every photo's camera pose. Writes `calibration.json`
+  (`--yaml` for OpenCV FileStorage, `--annotate DIR` to see what it found). By default every face
+  of the rig in every photo is its own planar view (Zhang's method); `--method rig3d` uses the
+  whole 3D rig per photo. Distortion terms are only freed when the markers reach far enough into
+  the image corners to measure them - put the rig near the edges in some photos.
+  The repository copy is `src/rig/calibrate.py` (`--rig rig.json` there).
+- **stereo_calibrate.py** - a stereo pair.
+  ```
+  python stereo_calibrate.py --left 'left/*.png' --right 'right/*.png'    # or --webcam 0 1
+  ```
+  Calibrates both cameras, then `cv2.stereoCalibrate` on the markers both saw in each pair: R, T
+  (camera 2 relative to camera 1), essential E = [T]x R, fundamental F = K2^-T E K1^-1, the epipolar
+  (Sampson) error of every shared corner, the pair-to-pair spread, and rectification (R1, R2, P1,
+  P2, Q, plus the remaining row error) for a stereo matcher. `--annotate` draws epipolar lines and
+  rectified pairs. Give `--intrinsics1/2` (calibrate.py output) to keep each camera's own calibration.
+
+Measured on synthetic photos rendered from the printed geometry (a 1280x960 camera with lens
+distortion, rig 33-47 cm away; `tests/check_calibrate_script.py`, `tests/check_stereo_script.py`):
+
+| | 3D rig (7 photos) | one plane (10 photos) |
+|---|---|---|
+| focal length | 0.002 % | 0.7 % |
+| principal point | 9 px | 12 px |
+| camera positions | within 2.1 mm | within 3.8 mm |
+| stereo, cameras calibrated by the script | T 1.8 mm, R 0.41 deg, Sampson 0.17 px | T 0.8 mm, R 0.25 deg, Sampson 0.04 px |
+| stereo, intrinsics given | T 0.43 mm, R 0.05 deg | T 0.03 mm, R 0.014 deg |
+
+The principal point is what a small target pins down least; calibrate each camera with more
+photos that fill the frame, then pass `--intrinsics1/2`, for the best stereo result.
+
 ## Tests
 
 ```
 npm test                                   # geometry: closed meshes, no overlap, volumes; 3MF structure
 node tests/rig.test.mjs OUT && python tests/check_rig_opencv.py OUT OUT/plane
+node tests/make_calibrate_script.mjs OUT OUT/plane     # the two scripts exactly as the buttons build them
+python tests/check_calibrate_script.py OUT OUT/plane   # calibrate.py end to end on rendered photos
+python tests/check_stereo_script.py OUT OUT/plane      # stereo_calibrate.py end to end on rendered pairs
 ```
 
 Both modes are covered. The second line renders every face, and the whole rig or plate through a
