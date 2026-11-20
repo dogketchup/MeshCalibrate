@@ -1,15 +1,15 @@
 """Cross-check the printable rig against OpenCV, from the GEOMETRY.
 
-    node tests/rig.test.mjs OUT        # writes OUT/rig.json, OUT/rig_white.stl, OUT/rig_black.stl
-    python tests/check_rig_opencv.py OUT
+    node tests/rig.test.mjs OUT        # 3D rig in OUT, one-plane plate in OUT/plane
+    python tests/check_rig_opencv.py OUT OUT/plane
 
 1. Each face is rendered straight on from the two STLs (not from rig.json's
    bits), the markers are detected with DICT_ARUCO_ORIGINAL, and their ids and
    corners are compared with rig.json's corners projected into the same image.
-2. The whole 3D rig is rendered through a pinhole camera from two viewpoints,
+2. The whole target is rendered through a pinhole camera from two viewpoints,
    detected, and solvePnP is run against rig.json's 3D corners: the pose must
-   come back and reproject to ~0, which only happens if all three faces share
-   the one origin rig.json describes.
+   come back and reproject to ~0. For the 3D rig that only happens if all three
+   faces share the one origin rig.json describes.
 Needs numpy and opencv (cv2.aruco).
 """
 import json
@@ -70,6 +70,7 @@ def detector():
 def main(outdir):
     out = Path(outdir)
     rig = json.loads((out / "rig.json").read_text())
+    print(f"--- {out}: {rig['name']} ({len(rig['tags'])} markers on {', '.join(p['name'] for p in rig['planes'])})")
     white, black = load_stl(out / "rig_white.stl"), load_stl(out / "rig_black.stl")
     S = rig["print"]["face_mm"]
     tags = {t["id"]: t for t in rig["tags"]}
@@ -126,7 +127,7 @@ def main(outdir):
     all_cols = [235] * len(white) + [15] * len(black)
     for eye in ([330.0, 260.0, 300.0], [260.0, 340.0, 230.0]):
         eye = np.array(eye)
-        target = np.array([35.0, 35.0, 30.0])
+        target = np.mean([t["center"] for t in rig["tags"]], axis=0)
         f = target - eye
         f /= np.linalg.norm(f)
         r = np.cross(f, [0, 0, 1.0])
@@ -152,7 +153,7 @@ def main(outdir):
         rot_err = float(np.degrees(np.arccos(np.clip((np.trace(R_est.T @ R) - 1) / 2, -1, 1))))
         pos_err = float(np.linalg.norm((-R_est.T @ tvec.ravel()) - eye))
         planes_seen = sorted({tags[i]["plane"] for i in found})
-        ok = ok_pnp and len(planes_seen) == 3 and rms < 0.3 and rot_err < 0.1 and pos_err < 1.0
+        ok = ok_pnp and len(found) == len(tags) and len(planes_seen) == len(rig["planes"]) and rms < 0.3 and rot_err < 0.1 and pos_err < 1.0
         failures += not ok
         print(f"{'ok  ' if ok else 'FAIL'} 3D view from {eye.tolist()}: {len(found)} markers on {planes_seen}; "
               f"solvePnP reprojection RMS {rms:.3f} px, rotation error {rot_err:.4f} deg, camera position error {pos_err:.3f} mm")
@@ -162,4 +163,4 @@ def main(outdir):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else "."))
+    sys.exit(max(main(d) for d in (sys.argv[1:] or ["."])))

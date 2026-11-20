@@ -1,7 +1,9 @@
 // node tests/rig.test.mjs [outdir]
-// Builds the default corner rig, checks the two meshes are closed, consistently
-// oriented and non-overlapping, and (with outdir) writes rig.json, rig.csv and
-// the two STLs for tests/check_rig_opencv.py.
+// Builds the corner rig and the single plate in several sizes, checks the two
+// meshes are closed, consistently oriented and non-overlapping, and (with
+// outdir) writes rig.json, rig.csv and the two STLs of the default 3D rig to
+// outdir and of the default one-plane plate to outdir/plane, for
+// tests/check_rig_opencv.py.
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildRig, rigToJson, rigJsonText, rigToCsv } from '../src/rig/rigModel.js';
@@ -17,20 +19,29 @@ const VARIANTS = [
   { tagsPerPlane: 9, tagSizeMm: 21, faceMm: 120, baseId: 100 },
   { tagsPerPlane: 4, tagSizeMm: 35, layout: 'physics' },
   { tagsPerPlane: 4, tagSizeMm: 33.3, faceMm: 97.5, thicknessMm: 4.2, inlayDepthMm: 0.8 },
+  { mode: 'plane' },                                         // one-plane defaults (written to outdir/plane)
+  { mode: 'plane', tagsPerPlane: 1, tagSizeMm: 60 },
+  { mode: 'plane', tagsPerPlane: 6, tagSizeMm: 28, faceMm: 140, thicknessMm: 3, inlayDepthMm: 0.6, baseId: 0 },
+  { mode: 'plane', tagsPerPlane: 4, tagSizeMm: 33.3, faceMm: 97.5, thicknessMm: 4.2, inlayDepthMm: 0.8, layout: 'physics' },
 ];
+const WRITE = { 0: '', 6: 'plane' }; // variant index -> subdirectory of outdir
 const outdir = process.argv[2];
 for (const [vi, params] of VARIANTS.entries()) {
 console.log(`--- variant ${vi}: ${JSON.stringify(params)}`);
 const rig = buildRig(params);
 const mesh = buildRigMesh(rig);
-const { faceMm: S, thicknessMm: T, inlayDepthMm: D } = rig.params;
+const { faceMm: S, thicknessMm: T, inlayDepthMm: D, mode } = rig.params;
+const PLANE = mode === 'plane';
 
 // ---- ids --------------------------------------------------------------------
 const ids = rig.tags.map((t) => t.id);
 check(new Set(ids).size === ids.length, `ids unique across the rig: ${ids.join(' ')}`);
 for (const plane of ['floor', 'wall_xz', 'wall_yz']) {
-  check(rig.tags.filter((t) => t.plane === plane).length === rig.params.tagsPerPlane, `${plane} carries ${rig.params.tagsPerPlane} markers`);
+  const want = PLANE && plane !== 'floor' ? 0 : rig.params.tagsPerPlane;
+  check(rig.tags.filter((t) => t.plane === plane).length === want, `${plane} carries ${want} markers`);
 }
+check(rig.planes.map((p) => p.name).join(',') === (PLANE ? 'floor' : 'floor,wall_xz,wall_yz'), `planes: ${rig.planes.map((p) => p.name).join(', ')}`);
+check(ids[0] === rig.params.baseId && ids[ids.length - 1] === rig.params.baseId + ids.length - 1, `ids run ${rig.params.baseId}..${rig.params.baseId + ids.length - 1}`);
 
 // ---- closedness ------------------------------------------------------------------
 function edgeReport({ indices: I }) {
@@ -67,7 +78,7 @@ for (const name of ['white', 'black']) {
 }
 
 // ---- volumes: white + black fill exactly the solid, black is exactly the inlay ----
-const vSolid = (S + T) * (S + T) * T + (S + T) * T * S + T * S * S;
+const vSolid = PLANE ? S * S * T : (S + T) * (S + T) * T + (S + T) * T * S + T * S * S;
 const blackCellsPerTag = rig.tags.reduce((n, t) => n + t.cells.flat().filter(Boolean).length, 0);
 const vBlackExpected = blackCellsPerTag * rig.cellMm * rig.cellMm * D;
 const vWhite = meshVolume(mesh.white), vBlack = meshVolume(mesh.black);
@@ -100,15 +111,19 @@ let both = 0, inW = 0, inB = 0, agree = 0;
 const SAMPLES = 1500;
 for (let s = 0; s < SAMPLES; s++) {
   // half the samples in the thin inlay layers where black and white meet
+  // (sampling a margin around the solid too, so outside points are checked as well)
   const p = s % 2
-    ? [-T + rnd() * (S + T), -T + rnd() * (S + T), -T + rnd() * (S + T)]
+    ? [-T - 2 + rnd() * (S + T + 4), -T - 2 + rnd() * (S + T + 4), -T - 2 + rnd() * (S + T + 4)]
+    : PLANE ? [rnd() * S, rnd() * S, -D * rnd()]
     : [[rnd() * S, rnd() * S, -D * rnd()], [rnd() * S, -D * rnd(), rnd() * S], [-D * rnd(), rnd() * S, rnd() * S]][s % 3];
   const w = insideX(mesh.white, p), b = insideX(mesh.black, p);
   if (w && b) both++;
   if (w) inW++;
   if (b) inB++;
   const x = p[0], y = p[1], z = p[2];
-  const solid = (x > -T && x < S && y > -T && y < S && z > -T && z < 0) || (x > -T && x < S && y > -T && y < 0 && z > 0 && z < S) || (x > -T && x < 0 && y > 0 && y < S && z > 0 && z < S);
+  const solid = PLANE
+    ? x > 0 && x < S && y > 0 && y < S && z > -T && z < 0
+    : (x > -T && x < S && y > -T && y < S && z > -T && z < 0) || (x > -T && x < S && y > -T && y < 0 && z > 0 && z < S) || (x > -T && x < 0 && y > 0 && y < S && z > 0 && z < S);
   if (solid === (w || b)) agree++;
 }
 console.log(`     ${SAMPLES} sample points: ${inW} in white, ${inB} in black, ${both} in both, ${agree} agree with the analytic solid`);
@@ -132,21 +147,24 @@ for (const t of rig.tags) {
 }
 check(cornerOk, 'every marker: corners follow (u, v), lie on their face at the shared origin, inside [0, S]');
 
-if (outdir && vi === 0) {
-  mkdirSync(outdir, { recursive: true });
-  writeFileSync(join(outdir, 'rig.json'), rigJsonText(rig));
-  writeFileSync(join(outdir, 'rig.csv'), rigToCsv(rig));
-  writeFileSync(join(outdir, 'rig_white.stl'), Buffer.from(meshToStl(mesh.white, 'rig_white')));
-  writeFileSync(join(outdir, 'rig_black.stl'), Buffer.from(meshToStl(mesh.black, 'rig_black')));
-  console.log(`     wrote rig.json, rig.csv, rig_white.stl, rig_black.stl to ${outdir}`);
+if (outdir && vi in WRITE) {
+  const dir = join(outdir, WRITE[vi]);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'rig.json'), rigJsonText(rig));
+  writeFileSync(join(dir, 'rig.csv'), rigToCsv(rig));
+  writeFileSync(join(dir, 'rig_white.stl'), Buffer.from(meshToStl(mesh.white, 'rig_white')));
+  writeFileSync(join(dir, 'rig_black.stl'), Buffer.from(meshToStl(mesh.black, 'rig_black')));
+  console.log(`     wrote rig.json, rig.csv, rig_white.stl, rig_black.stl to ${dir}`);
 }
 }
 
 // ---- impossible layouts are refused with a reason, not drawn overlapping -------------
-for (const bad of [{ tagsPerPlane: 9, tagSizeMm: 35 }, { inlayDepthMm: 6 }, { baseId: 1020 }]) {
+for (const bad of [{ tagsPerPlane: 9, tagSizeMm: 35 }, { inlayDepthMm: 6 }, { baseId: 1020 }, { mode: 'plane', baseId: 1021 }, { mode: 'flat' }]) {
   let msg = null;
   try { buildRig(bad); } catch (e) { msg = e.message; }
   check(msg !== null, `refused ${JSON.stringify(bad)}: ${msg}`);
 }
+{ let ok = true; try { buildRig({ mode: 'plane', baseId: 1020 }); } catch { ok = false; }
+  check(ok, 'one plane with ids 1020..1023 is accepted (only one face of ids needed)'); }
 console.log(failed ? `${failed} check(s) FAILED` : 'all checks passed');
 process.exit(failed ? 1 : 0);

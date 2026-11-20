@@ -1,13 +1,13 @@
 import './style.css';
-import { buildRig, rigJsonText, rigToCsv, DEFAULTS, PLANES } from './rig/rigModel.js';
+import { buildRig, rigJsonText, rigToCsv, DEFAULTS, MODES } from './rig/rigModel.js';
 import { buildRigMesh, meshToStl } from './rig/rigMesh.js';
 import { DICTIONARY } from './rig/arucoBits.js';
 import { createRigScene } from './threejsscene.js';
 
 const FIELDS = [
-  { key: 'faceMm', label: 'face size (mm)', step: 0.5, min: 20, max: 400 },
+  { key: 'faceMm', label: 'face size (mm)', plane: 'plate size (mm)', step: 0.5, min: 20, max: 400 },
   { key: 'tagSizeMm', label: 'marker size (mm)', step: 0.5, min: 7, max: 400 },
-  { key: 'tagsPerPlane', label: 'markers per face', step: 1, min: 1, max: 64 },
+  { key: 'tagsPerPlane', label: 'markers per face', plane: 'markers on the plate', step: 1, min: 1, max: 64 },
   { key: 'baseId', label: 'first marker id', step: 1, min: 0, max: 1023 },
   { key: 'thicknessMm', label: 'plate thickness (mm)', step: 0.1, min: 1, max: 50 },
   { key: 'inlayDepthMm', label: 'inlay depth (mm)', step: 0.1, min: 0.2, max: 10 },
@@ -16,11 +16,16 @@ const FIELDS = [
 document.querySelector('#app').innerHTML = `
 <aside id="panel">
   <h1>MeshCalibrate</h1>
-  <p class="note">A three-face ArUco corner rig (floor + two walls). All three faces meet at
-  one origin and every marker id is unique, so one camera image of the rig gives one pose.
+  <div id="mode" role="group" aria-label="what to make">
+    ${Object.entries(MODES).map(([k, m]) => `<button type="button" data-mode="${k}" aria-pressed="${k === DEFAULTS.mode}">${m.label}</button>`).join('')}
+  </div>
+  <p class="note" data-for="rig">A three-face ArUco corner rig (floor + two walls). All three faces
+  meet at one origin and every marker id is unique, so one camera image of the rig gives one pose.
   Prints floor-down with no supports: the black cells are inlays in the white body.</p>
+  <p class="note" data-for="plane">One flat ArUco plate. The origin is the corner of its marker
+  face. It prints marker-face up with no supports: the black cells are inlays in the white body.</p>
   <div id="fields">
-    ${FIELDS.map((f) => `<label>${f.label}<input type="number" id="f_${f.key}" value="${DEFAULTS[f.key]}" step="${f.step}" min="${f.min}" max="${f.max}"></label>`).join('')}
+    ${FIELDS.map((f) => `<label><span data-label="${f.key}">${f.label}</span><input type="number" id="f_${f.key}" value="${DEFAULTS[f.key]}" step="${f.step}" min="${f.min}" max="${f.max}"></label>`).join('')}
     <label>layout<select id="f_layout"><option value="grid">grid</option><option value="physics">physics</option></select></label>
   </div>
   <div id="error"></div>
@@ -41,12 +46,24 @@ document.querySelector('#app').innerHTML = `
 
 const view = createRigScene(document.getElementById('view'));
 let current = null; // { rig, meshes }
+let mode = DEFAULTS.mode;
 
 function readParams() {
-  const p = {};
+  const p = { mode };
   for (const f of FIELDS) p[f.key] = Number(document.getElementById(`f_${f.key}`).value);
   p.layout = document.getElementById('f_layout').value;
   return p;
+}
+
+// The mode decides the whole page: which note and labels show, what the
+// preview draws and what every export contains.
+function setMode(next) {
+  mode = next;
+  document.body.dataset.mode = mode;
+  document.querySelectorAll('#mode button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
+  for (const f of FIELDS) document.querySelector(`[data-label="${f.key}"]`).textContent = (mode === 'plane' && f.plane) || f.label;
+  document.getElementById('x_3mf').title = `one object, two parts: white body + black inlay (filament 1 / 2) - ${MODES[mode].label}`;
+  schedule();
 }
 
 function drawFace(canvas, rig, planeName) {
@@ -55,7 +72,7 @@ function drawFace(canvas, rig, planeName) {
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  const plane = PLANES.find((p) => p.name === planeName);
+  const plane = rig.planes.find((p) => p.name === planeName);
   // face coordinates of a 3D point: (u, v) from the face's top-left as printed
   const tl = { floor: [0, S, 0], wall_xz: [S, 0, S], wall_yz: [0, 0, S] }[planeName];
   const uv = (p) => {
@@ -95,19 +112,25 @@ function rebuild() {
   const p = rig.params;
   const ids = (name) => rig.tags.filter((t) => t.plane === name).map((t) => t.id);
   const tris = (m) => m.indices.length / 3;
+  const W = p.faceMm + p.thicknessMm;
+  const faceRows = p.mode === 'plane'
+    ? `<tr><td>plate (z=0)</td><td>${ids('floor').join(' ')}</td></tr>`
+    : `<tr><td>floor (z=0)</td><td>${ids('floor').join(' ')}</td></tr>
+       <tr><td>wall_xz (y=0)</td><td>${ids('wall_xz').join(' ')}</td></tr>
+       <tr><td>wall_yz (x=0)</td><td>${ids('wall_yz').join(' ')}</td></tr>`;
   document.getElementById('summary').innerHTML = `
     <table>
+      <tr><td>making</td><td><b>${MODES[p.mode].label}</b></td></tr>
       <tr><td>dictionary</td><td>${DICTIONARY}</td></tr>
       <tr><td>cell</td><td>${(p.tagSizeMm / 7).toFixed(3)} mm (white quiet zone &ge; 1 cell)</td></tr>
-      <tr><td>floor (z=0)</td><td>${ids('floor').join(' ')}</td></tr>
-      <tr><td>wall_xz (y=0)</td><td>${ids('wall_xz').join(' ')}</td></tr>
-      <tr><td>wall_yz (x=0)</td><td>${ids('wall_yz').join(' ')}</td></tr>
-      <tr><td>footprint</td><td>${p.faceMm + p.thicknessMm} x ${p.faceMm + p.thicknessMm} x ${p.faceMm + p.thicknessMm} mm</td></tr>
+      ${faceRows}
+      <tr><td>footprint</td><td>${p.mode === 'plane' ? `${p.faceMm} x ${p.faceMm} x ${p.thicknessMm}` : `${W} x ${W} x ${W}`} mm</td></tr>
       <tr><td>triangles</td><td>white ${tris(meshes.white)}, black ${tris(meshes.black)}</td></tr>
     </table>`;
   const faces = document.getElementById('faces');
-  faces.innerHTML = PLANES.map((pl) => `<figure><canvas id="c_${pl.name}" width="180" height="180"></canvas><figcaption>${pl.name} as printed</figcaption></figure>`).join('');
-  for (const pl of PLANES) drawFace(document.getElementById(`c_${pl.name}`), rig, pl.name);
+  const caption = (name) => (p.mode === 'plane' ? 'plate as printed' : `${name} as printed`);
+  faces.innerHTML = rig.planes.map((pl) => `<figure><canvas id="c_${pl.name}" width="180" height="180"></canvas><figcaption>${caption(pl.name)}</figcaption></figure>`).join('');
+  for (const pl of rig.planes) drawFace(document.getElementById(`c_${pl.name}`), rig, pl.name);
 }
 
 function download(blob, name) {
@@ -121,7 +144,8 @@ function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-const base = () => `corner_rig_${current.rig.params.baseId}-${current.rig.tags[current.rig.tags.length - 1].id}`;
+// file names say which mode made them: corner_rig_40-51.3mf vs plate_40-43.3mf
+const base = () => `${current.rig.params.mode === 'plane' ? 'plate' : 'corner_rig'}_${current.rig.params.baseId}-${current.rig.tags[current.rig.tags.length - 1].id}`;
 document.getElementById('x_3mf').addEventListener('click', async () => download(await view.export3MF(), `${base()}.3mf`));
 document.getElementById('x_stl_white').addEventListener('click', () => download(new Blob([meshToStl(current.meshes.white, 'rig_white')], { type: 'model/stl' }), `${base()}_white.stl`));
 document.getElementById('x_stl_black').addEventListener('click', () => download(new Blob([meshToStl(current.meshes.black, 'rig_black')], { type: 'model/stl' }), `${base()}_black.stl`));
@@ -135,4 +159,7 @@ const schedule = () => {
   pending = requestAnimationFrame(rebuild);
 };
 document.querySelectorAll('#fields input, #fields select').forEach((el) => el.addEventListener('input', schedule));
-rebuild();
+document.querySelectorAll('#mode button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+// ?mode=plane opens straight into one-plane mode (default: the 3D rig)
+const asked = new URLSearchParams(location.search).get('mode');
+setMode(asked in MODES ? asked : DEFAULTS.mode);

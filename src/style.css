@@ -64,6 +64,37 @@ h2 {
   margin: 0 0 12px;
 }
 
+#mode {
+  display: flex;
+  margin: 4px 0 10px;
+}
+
+#mode button {
+  flex: 1;
+  font: inherit;
+  font-weight: 600;
+  padding: 6px 8px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+}
+
+#mode button + button {
+  border-left: none;
+}
+
+#mode button[aria-pressed='true'] {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+
+body[data-mode='rig'] .note[data-for='plane'],
+body[data-mode='plane'] .note[data-for='rig'] {
+  display: none;
+}
+
 #fields {
   display: grid;
   grid-template-columns: 1fr 1fr;

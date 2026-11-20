@@ -1,5 +1,5 @@
 // node tests/export3mf.test.mjs [outdir]
-// Exports the default rig through the same three.js Group + three-3mf-exporter
+// Exports the default 3D rig and the default one-plane plate through the same three.js Group + three-3mf-exporter
 // path the page uses, then opens the 3MF and checks its structure: one build
 // item, one object made of two mesh parts, each part on its own filament.
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -13,7 +13,10 @@ import { makeRigGroup } from '../src/rig/rigGroup.js';
 let failed = 0;
 const check = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if (!ok) failed++; };
 
-const rig = buildRig();
+const outdir = process.argv[2];
+for (const mode of ['rig', 'plane']) {
+console.log(`--- mode ${mode}`);
+const rig = buildRig({ mode });
 const meshes = buildRigMesh(rig);
 const { group, setMeshes } = makeRigGroup();
 setMeshes(meshes);
@@ -36,12 +39,13 @@ check(extruders.join(',') === 'rig_white=1,rig_black=2', `Bambu part extruders: 
 check(JSON.stringify(project.filament_colour) === '["#ffffff","#000000"]', `filament colours ${JSON.stringify(project.filament_colour)}`);
 check(project.enable_support === '0', 'supports off in the project settings');
 
-const outdir = process.argv[2];
 if (outdir) {
-  mkdirSync(outdir, { recursive: true });
-  writeFileSync(join(outdir, 'rig.3mf'), bytes);
-  writeFileSync(join(outdir, 'expected_volumes.json'), JSON.stringify({ rig_white: meshVolume(meshes.white), rig_black: meshVolume(meshes.black) }));
-  console.log(`     wrote rig.3mf (${bytes.length} bytes) to ${outdir}`);
+  const dir = join(outdir, mode === 'plane' ? 'plane' : '');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'rig.3mf'), bytes);
+  writeFileSync(join(dir, 'expected_volumes.json'), JSON.stringify({ rig_white: meshVolume(meshes.white), rig_black: meshVolume(meshes.black) }));
+  console.log(`     wrote rig.3mf (${bytes.length} bytes) to ${dir}`);
+}
 }
 console.log(failed ? `${failed} check(s) FAILED` : 'all 3MF checks passed');
 process.exit(failed ? 1 : 0);

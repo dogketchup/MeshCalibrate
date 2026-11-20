@@ -1,6 +1,6 @@
-// Printable meshes for the corner rig. DOM-free (runs under node).
+// Printable meshes for the corner rig or the single plate. DOM-free (runs under node).
 //
-// The rig is cut into a rectilinear grid whose lines are every plate edge, the
+// The target is cut into a rectilinear grid whose lines are every plate edge, the
 // inlay depth and every marker-cell edge on every face. Each grid cell is
 // empty, white or black, and a face is emitted only where the material changes
 // across a cell wall. Because all faces live on one global lattice the result
@@ -13,6 +13,16 @@
 // Two black cells that touch only along an edge (a diagonal in the bit
 // pattern) share that edge between four faces; slicers accept that.
 import { PLANES } from './rigModel.js';
+
+/** Is the cell centred at (x, y, z) inside the solid, and which plate is it part of? */
+function plateAt(mode, S, T, x, y, z) {
+  const inside = (v, lo, hi) => v > lo && v < hi;
+  if (mode === 'plane') return inside(x, 0, S) && inside(y, 0, S) && inside(z, -T, 0) ? 'floor' : null;
+  if (inside(x, -T, S) && inside(y, -T, S) && inside(z, -T, 0)) return 'floor';
+  if (inside(x, -T, S) && inside(y, -T, 0) && inside(z, 0, S)) return 'wall_xz';
+  if (inside(x, -T, 0) && inside(y, 0, S) && inside(z, 0, S)) return 'wall_yz';
+  return null;
+}
 
 const EMPTY = 0, WHITE = 1, BLACK = 2;
 const EPS = 1e-7;
@@ -47,11 +57,12 @@ function blackOnFace(tags, plane, cellMm, p) {
 export function buildRigMesh(rig) {
   const { faceMm: S, thicknessMm: T, inlayDepthMm: D } = rig.params;
   const cell = rig.cellMm;
+  const mode = rig.params.mode;
   const byPlane = Object.fromEntries(PLANES.map((pl) => [pl.name, rig.tags.filter((t) => t.plane === pl.name)]));
 
   // ---- lattice: plate edges, inlay depth, and every marker-cell edge --------
   const lines = [new Set([-T, -D, 0, S]), new Set([-T, -D, 0, S]), new Set([-T, -D, 0, S])];
-  for (const plane of PLANES) {
+  for (const plane of rig.planes) {
     const au = axisOf(plane.u), av = axisOf(plane.v);
     for (const t of byPlane[plane.name]) {
       for (let k = 0; k <= 7; k++) {
@@ -77,15 +88,13 @@ export function buildRigMesh(rig) {
       for (let i = 0; i < n[0]; i++) {
         const x = (L[0][i] + L[0][i + 1]) / 2;
         const p = [x, y, z];
-        const inFloor = inside(x, -T, S) && inside(y, -T, S) && inside(z, -T, 0);
-        const inWallXZ = inside(x, -T, S) && inside(y, -T, 0) && inside(z, 0, S);
-        const inWallYZ = inside(x, -T, 0) && inside(y, 0, S) && inside(z, 0, S);
+        const plate = plateAt(mode, S, T, x, y, z);
         let m = EMPTY;
-        if (inFloor || inWallXZ || inWallYZ) {
+        if (plate) {
           m = WHITE;
-          if (inFloor && z > -D && inside(x, 0, S) && inside(y, 0, S) && blackOnFace(byPlane.floor, floor, cell, p)) m = BLACK;
-          else if (inWallXZ && y > -D && inside(x, 0, S) && blackOnFace(byPlane.wall_xz, wallXZ, cell, p)) m = BLACK;
-          else if (inWallYZ && x > -D && blackOnFace(byPlane.wall_yz, wallYZ, cell, p)) m = BLACK;
+          if (plate === 'floor' && z > -D && inside(x, 0, S) && inside(y, 0, S) && blackOnFace(byPlane.floor, floor, cell, p)) m = BLACK;
+          else if (plate === 'wall_xz' && y > -D && inside(x, 0, S) && blackOnFace(byPlane.wall_xz, wallXZ, cell, p)) m = BLACK;
+          else if (plate === 'wall_yz' && x > -D && blackOnFace(byPlane.wall_yz, wallYZ, cell, p)) m = BLACK;
         }
         mat[idx(i, j, k)] = m;
         if (m === WHITE) whiteCells++;

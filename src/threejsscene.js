@@ -36,16 +36,23 @@ export function createRigScene(container) {
   const { group: rig, setMeshes } = makeRigGroup();
   scene.add(rig);
 
-  let framed = false;
+  let framedFor = null; // the mode the camera was last framed for
 
   function setRig(meshes, params) {
     setMeshes(meshes);
     grid.position.z = -params.thicknessMm - 0.01;
-    if (!framed) {
+    if (framedFor !== params.mode) {
+      // re-frame on a mode switch so the change is obvious: into the corner of
+      // the rig, or down onto the plate
       const S = params.faceMm;
-      controls.target.set(S * 0.35, S * 0.35, S * 0.25);
-      camera.position.set(S * 2.6, S * 2.1, S * 1.9);
-      framed = true;
+      if (params.mode === 'plane') {
+        controls.target.set(S * 0.5, S * 0.5, 0);
+        camera.position.set(S * 1.6, S * 0.1, S * 1.5);
+      } else {
+        controls.target.set(S * 0.35, S * 0.35, S * 0.25);
+        camera.position.set(S * 2.6, S * 2.1, S * 1.9);
+      }
+      framedFor = params.mode;
     }
   }
 

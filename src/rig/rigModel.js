@@ -1,5 +1,8 @@
-// The corner rig: three faces (floor + two walls) that meet at ONE origin, with
-// every marker id unique across the whole rig. DOM-free (runs under node).
+// The calibration target, in one of two modes. DOM-free (runs under node).
+//
+//   'rig'   - the corner rig: three faces (floor + two walls) that meet at ONE
+//             origin, with every marker id unique across the whole rig.
+//   'plane' - one flat plate: just the floor face, same markers and inlays.
 //
 // Rig frame, millimetres:
 //   origin = the inner corner where the floor's top face (z = 0), the wall face
@@ -10,6 +13,8 @@
 //   floor    x in [-T, S], y in [-T, S], z in [-T, 0]
 //   wall_xz  x in [-T, S], y in [-T, 0], z in [0, S]
 //   wall_yz  x in [-T, 0], y in [0, S],  z in [0, S]
+// In 'plane' mode the solid is the plate alone, x, y in [0, S], z in [-T, 0]:
+// origin at the corner of its top (marker) face, the same frame as the rig's floor.
 //
 // Marker axes per face: u = the marker's "right", v = its "down", as seen when
 // looking at the printed face (u x v = -normal, the same handedness as an
@@ -25,6 +30,16 @@ export const PLANES = [
   { name: 'wall_yz', normal: [1, 0, 0], u: [0, 1, 0],  v: [0, 0, -1] },
 ];
 
+export const MODES = {
+  rig: { label: '3D rig', planes: PLANES, name: 'meshcalibrate corner rig',
+         frame: 'origin = inner corner where the floor top face (z=0) and the wall faces y=0 and x=0 meet; +x,+y along the floor, +z up; faces span [0,S] on each axis' },
+  plane: { label: 'one plane', planes: PLANES.slice(0, 1), name: 'meshcalibrate single plate',
+           frame: 'origin = corner of the plate top face (z=0, the marker face); +x,+y along the plate, +z up out of the markers; the face spans [0,S] x [0,S]' },
+};
+
+/** The faces a mode prints: all three for 'rig', the floor alone for 'plane'. */
+export const planesFor = (mode) => MODES[mode].planes;
+
 export const DEFAULTS = {
   faceMm: 100,        // S: side of each square face
   thicknessMm: 5,     // T: plate thickness
@@ -33,6 +48,7 @@ export const DEFAULTS = {
   tagsPerPlane: 4,
   baseId: 40,         // floor gets baseId.., wall_xz the next block, wall_yz the next
   layout: 'grid',     // 'grid' | 'physics'
+  mode: 'rig',        // 'rig' (floor + two walls) | 'plane' (the floor plate alone)
 };
 
 // The 3D point that sits at the face's top-left corner as seen from the front,
@@ -70,7 +86,8 @@ function checkParams(p) {
   if (!Number.isInteger(p.baseId) || p.baseId < 0) errors.push(`baseId must be an integer >= 0, got ${p.baseId}`);
   if (p.inlayDepthMm >= p.thicknessMm) errors.push('inlayDepthMm must be less than thicknessMm');
   if (p.layout !== 'grid' && p.layout !== 'physics') errors.push(`layout must be 'grid' or 'physics', got ${p.layout}`);
-  const last = p.baseId + 3 * p.tagsPerPlane - 1;
+  if (!(p.mode in MODES)) errors.push(`mode must be 'rig' or 'plane', got ${p.mode}`);
+  const last = p.baseId + (p.mode in MODES ? planesFor(p.mode).length : 1) * p.tagsPerPlane - 1;
   if (last > MAX_ID) errors.push(`ids ${p.baseId}..${last} run past ${MAX_ID}, the last id in ${DICTIONARY}`);
   if (errors.length) throw new Error(errors.join('; '));
 }
@@ -129,7 +146,8 @@ export function buildRig(params = {}) {
   const cell = s / MARKER_CELLS;
   const face = layoutFace(p, cell);
   const tags = [];
-  PLANES.forEach((plane, pi) => {
+  const planes = planesFor(p.mode);
+  planes.forEach((plane, pi) => {
     const tl = faceTopLeft(plane.name, S);
     face.forEach(([a, b], i) => {
       const id = p.baseId + pi * p.tagsPerPlane + i;
@@ -146,20 +164,20 @@ export function buildRig(params = {}) {
       });
     });
   });
-  return { params: p, cellMm: cell, planes: PLANES, tags };
+  return { params: p, cellMm: cell, planes, tags };
 }
 
 /** rig.json - the file YamCamCtl and calibrate.py read. */
-export function rigToJson(rig, name = 'meshcalibrate corner rig') {
+export function rigToJson(rig, name) {
   const p = rig.params;
   return {
     format: FORMAT,
-    name,
+    name: name || MODES[p.mode].name,
     units: 'mm',
     dictionary: DICTIONARY,
-    frame: 'origin = inner corner where the floor top face (z=0) and the wall faces y=0 and x=0 meet; +x,+y along the floor, +z up; faces span [0,S] on each axis',
+    frame: MODES[p.mode].frame,
     corner_order: 'opencv: TL,TR,BR,BL as printed',
-    planes: PLANES.map((pl) => ({ name: pl.name, normal: pl.normal, u: pl.u, v: pl.v })),
+    planes: rig.planes.map((pl) => ({ name: pl.name, normal: pl.normal, u: pl.u, v: pl.v })),
     tags: rig.tags.map((t) => ({
       id: t.id,
       plane: t.plane,
@@ -167,7 +185,7 @@ export function rigToJson(rig, name = 'meshcalibrate corner rig') {
       center: t.center,
       corners: t.corners,
     })),
-    print: { face_mm: p.faceMm, thickness_mm: p.thicknessMm, inlay_depth_mm: p.inlayDepthMm, layout: p.layout },
+    print: { mode: p.mode, face_mm: p.faceMm, thickness_mm: p.thicknessMm, inlay_depth_mm: p.inlayDepthMm, layout: p.layout },
   };
 }
 
